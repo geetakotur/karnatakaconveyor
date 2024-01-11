@@ -1,0 +1,136 @@
+version: '3'
+
+
+networks:
+  project_network:
+    driver: bridge
+
+volumes:
+    project_pgdatabase:
+
+
+services:
+
+  # PostgreSQL
+  database:
+    image: postgres:13-alpine
+    container_name: project_pgsql
+    restart: unless-stopped
+    tty: true
+    environment:
+      POSTGRES_DB: $DB_NAME
+      POSTGRES_USER: $DB_USER
+      POSTGRES_PASSWORD: $DB_PASSWORD
+      PGDATA: /var/lib/postgresql/data/pgdata
+    networks:
+      - project_network
+
+    # TODO: remove after testing
+    ports:
+      - 15432:5432
+
+    # For Persistant storage
+    volumes:
+      # - $DATA_DIR_DB:/var/lib/postgresql/data
+      - project_pgdatabase:/var/lib/postgresql/data # TODO: Remove this
+
+
+  # Redis Service
+  # redis:
+  #   image: redis:6-alpine
+  #   container_name: project_redis
+  #   restart: unless-stopped
+  #   networks:
+  #     - project_network
+  #   volumes:
+  #     - $DATA_DIR_REDIS:/data
+
+
+  # nginx:
+  #   image: nginx:stable-alpine
+  #   restart: unless-stopped
+  #   container_name: project_nginx
+  #   networks:
+  #     - project_network
+  #   working_dir: /var/www/html
+  #   volumes:
+  #     - ./src:/var/www/html:ro
+  #     - ./docker/config/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+  #   ports:
+  #     - $HTTP_PORT:80
+  #   depends_on:
+  #     - server
+  #     - database
+
+
+  server:
+    image: sujaykumarh/laradock:latest
+    container_name: project_server
+    user: ${CURRENT_UID}
+    networks:
+      - project_network
+    working_dir: /var/www/html
+    volumes:
+      - ./src:/var/www/html
+      - ./docker/cache:/.config/psysh
+      - $LARAVEL_BOOTSTRAP_CACHE:/var/www/html/bootstrap/cache
+      - $COMPOSER_CACHE:/var/www/html/vendor
+      - $NODE_CACHE:/var/www/html/node_modules
+      # - $COMPOSER_DOWNLOAD_CACHE:/composer/cache
+    ports:
+      - $HTTP_PORT:8000
+    depends_on:
+      - database
+    # entrypoint: ['/usr/bin/composer']
+    entrypoint: ['php', '/var/www/html/artisan', 'serve', '--host=0.0.0.0', '--port=8000']
+
+  composer:
+    image: sujaykumarh/laradock:latest
+    container_name: project_composer
+    user: ${CURRENT_UID}
+    networks:
+      - project_network
+    working_dir: /var/www/html
+    volumes:
+      - ./src:/var/www/html
+      - $LARAVEL_BOOTSTRAP_CACHE:/var/www/html/bootstrap/cache
+      - $COMPOSER_CACHE:/var/www/html/vendor
+      # - $COMPOSER_DOWNLOAD_CACHE:/composer/cache
+
+
+  artisan:
+    image: sujaykumarh/laradock:latest
+    container_name: project_artisan
+    user: ${CURRENT_UID}
+    networks:
+      - project_network
+    working_dir: /var/www/html
+    volumes:
+      - ./src:/var/www/html
+      - ./docker/cache:/.config/psysh
+      - $LARAVEL_BOOTSTRAP_CACHE:/var/www/html/bootstrap/cache
+      - $COMPOSER_CACHE:/var/www/html/vendor
+    depends_on:
+      - server
+      - database
+    entrypoint: ['php', '/var/www/html/artisan']
+
+
+  # Laravel ArtisanClear Service
+  ac:
+    image: sujaykumarh/laradock:latest
+    container_name: project_artisan_clear
+    user: ${CURRENT_UID}
+    working_dir: /var/www/html
+    volumes:
+      - $PHP_INI:/usr/local/etc/php/php.ini
+      - ./src:/var/www/html
+      - ./docker/storage/uploads:/var/www/html/storage/app/uploads
+      - ./docker/cache:/.config/psysh
+      - $LARAVEL_BOOTSTRAP_CACHE:/var/www/html/bootstrap/cache
+      # - $COMPOSER_CACHE:/var/www/html/vendor
+    # depends_on:
+    #   - server
+    #   - database
+    #   - redis
+    entrypoint: ['sh', '/var/www/html/artisan-clear']
